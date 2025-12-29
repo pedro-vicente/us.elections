@@ -1,0 +1,21 @@
+[Unit]
+Description=wt.us.elections.strategy
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# openssl dhparam -out /root/services/wt.extra/build/wt.extra/dhparam.pem 2048
+
+LimitCORE=infinity
+Environment="LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/root/services/wt.extra/install/wt/lib"
+ExecStart=/root/services/us.elections/build/us.elections/elections --https-address=0.0.0.0 --https-port=9441 \
+--ssl-certificate=/etc/letsencrypt/live/pedro-vicente.net/fullchain.pem \
+--ssl-private-key=/etc/letsencrypt/live/pedro-vicente.net/privkey.pem \
+--ssl-tmp-dh=/root/services/wt.extra/build/wt.extra/dhparam.pem \
+--docroot=/root/services/us.elections/build/us.elections/ \
+-c /root/services/wt.extra/install/wt/etc/wt/wt_config_leaflet.xml 
+WorkingDirectory=/root/services/us.elections/build/us.elections/
+User=root
+
+[Install]
+WantedBy=multi-user.target
