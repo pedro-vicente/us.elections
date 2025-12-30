@@ -29,8 +29,8 @@ namespace Wt
 
     int current_year;
     std::string view_mode;
-    std::vector<county_record>* counties_ptr;
-    std::vector<state_record>* states_ptr;
+    std::vector<county_record>* counties;
+    std::vector<state_record>* states;
 
   protected:
     Impl* impl;

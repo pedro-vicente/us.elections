@@ -63,9 +63,9 @@ std::string escape_js_string(const std::string& input)
 {
   std::string output;
   output.reserve(input.size());
-  for (size_t i = 0; i < input.size(); ++i)
+  for (size_t idx = 0; idx < input.size(); ++idx)
   {
-    char c = input[i];
+    char c = input[idx];
     switch (c)
     {
     case '\'': output += "\\'"; break;
@@ -82,18 +82,17 @@ std::string escape_js_string(const std::string& input)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // margin_to_color
-// margin: positive = GOP (red), negative = DEM (blue)
-// Colors from tonmcg's colorizer
+// margin: positive = gop (red), negative = dem (blue)
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::string margin_to_color(double margin)
 {
-  if (margin > 0.3334) return "#B82D35";      // Strong GOP
-  if (margin > 0.1667) return "#E48268";      // Lean GOP
-  if (margin > 0.0)    return "#FACCB4";      // Slight GOP
-  if (margin > -0.1667) return "#BFDCEB";     // Slight DEM
-  if (margin > -0.3334) return "#6BACD0";     // Lean DEM
-  return "#2A71AE";                            // Strong DEM
+  if (margin > 0.3334) return "#B82D35";      // strong gop
+  if (margin > 0.1667) return "#E48268";      // lean gop
+  if (margin > 0.0)    return "#FACCB4";      // slight gop
+  if (margin > -0.1667) return "#BFDCEB";     // slight dem
+  if (margin > -0.3334) return "#6BACD0";     // lean dem
+  return "#2A71AE";                           // strong dem
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -120,7 +119,7 @@ namespace Wt
   }
 
   WMapLibre::WMapLibre()
-    : current_year(2024), view_mode("county"), counties_ptr(nullptr), states_ptr(nullptr)
+    : current_year(2024), view_mode("county"), counties(nullptr), states(nullptr)
   {
     setImplementation(std::unique_ptr<Impl>(impl = new Impl()));
     WApplication* app = WApplication::instance();
@@ -166,29 +165,33 @@ namespace Wt
       // create map
       /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-      js << "if (window.electionMap) { window.electionMap.remove(); }\n";
-      js << "window.electionMap = new maplibregl.Map({\n"
+      js << "if (window.map) { window.map.remove(); }\n";
+      js << "window.map = new maplibregl.Map({\n"
          << "  container: " << jsRef() << ",\n"
-         << "  style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',\n"
+         << "  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',\n"
          << "  center: [-98, 39],\n"
          << "  zoom: 4\n"
          << "});\n"
-         << "window.electionMap.addControl(new maplibregl.NavigationControl());\n";
+         << "window.map.addControl(new maplibregl.NavigationControl());\n";
 
-      js << "window.electionMap.on('load', function() {\n";
+#ifdef _WIN32
+      OutputDebugStringA(js.str().c_str());
+#endif
+
+      js << "window.map.on('load', function() {\n";
 
       /////////////////////////////////////////////////////////////////////////////////////////////////////
-      // build GeoJSON from database
+      // build geojson from database
       /////////////////////////////////////////////////////////////////////////////////////////////////////
 
       js << "var geojson = {type:'FeatureCollection',features:[\n";
 
-      if (counties_ptr && !counties_ptr->empty())
+      if (counties && !counties->empty())
       {
         bool first = true;
-        for (size_t idx = 0; idx < counties_ptr->size(); ++idx)
+        for (size_t idx = 0; idx < counties->size(); ++idx)
         {
-          const county_record& c = (*counties_ptr)[idx];
+          const county_record& c = (*counties)[idx];
           if (c.geojson.empty() || c.geojson == "null")
           {
             continue;
@@ -224,14 +227,14 @@ namespace Wt
       // add source and layers
       /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-      js << "window.electionMap.addSource('counties', {type:'geojson', data:geojson});\n";
+      js << "window.map.addSource('counties', {type:'geojson', data:geojson});\n";
 
-      js << "window.electionMap.addLayer({\n"
+      js << "window.map.addLayer({\n"
          << "  id:'counties-fill', type:'fill', source:'counties',\n"
          << "  paint:{'fill-color':['get','color'], 'fill-opacity':0.8}\n"
          << "});\n";
 
-      js << "window.electionMap.addLayer({\n"
+      js << "window.map.addLayer({\n"
          << "  id:'counties-line', type:'line', source:'counties',\n"
          << "  paint:{'line-color':'#222', 'line-width':0.3}\n"
          << "});\n";
@@ -242,9 +245,9 @@ namespace Wt
 
       js << "var popup = new maplibregl.Popup({closeButton:false, closeOnClick:false});\n";
 
-      js << "window.electionMap.on('mousemove', 'counties-fill', function(e) {\n"
+      js << "window.map.on('mousemove', 'counties-fill', function(e) {\n"
          << "  if (e.features.length > 0) {\n"
-         << "    window.electionMap.getCanvas().style.cursor = 'pointer';\n"
+         << "    window.map.getCanvas().style.cursor = 'pointer';\n"
          << "    var p = e.features[0].properties;\n"
          << "    var winner = (p.margin > 0) ? 'GOP' : 'DEM';\n"
          << "    var marginPct = Math.abs(p.margin * 100).toFixed(1);\n"
@@ -255,12 +258,12 @@ namespace Wt
          << "      + 'Margin: ' + winner + ' +' + marginPct + '%<br>'\n"
          << "      + 'Total votes: ' + p.total.toLocaleString()\n"
          << "      + '</div>';\n"
-         << "    popup.setLngLat(e.lngLat).setHTML(html).addTo(window.electionMap);\n"
+         << "    popup.setLngLat(e.lngLat).setHTML(html).addTo(window.map);\n"
          << "  }\n"
          << "});\n";
 
-      js << "window.electionMap.on('mouseleave', 'counties-fill', function() {\n"
-         << "  window.electionMap.getCanvas().style.cursor = '';\n"
+      js << "window.map.on('mouseleave', 'counties-fill', function() {\n"
+         << "  window.map.getCanvas().style.cursor = '';\n"
          << "  popup.remove();\n"
          << "});\n";
 
@@ -268,9 +271,9 @@ namespace Wt
       // click to zoom
       /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-      js << "window.electionMap.on('click', 'counties-fill', function(e) {\n"
+      js << "window.map.on('click', 'counties-fill', function(e) {\n"
          << "  var bbox = turf.bbox(e.features[0]);\n"
-         << "  window.electionMap.fitBounds(bbox, { padding: 100 });\n"
+         << "  window.map.fitBounds(bbox, { padding: 100 });\n"
          << "});\n";
 
       /////////////////////////////////////////////////////////////////////////////////////////////////////

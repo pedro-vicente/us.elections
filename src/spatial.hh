@@ -96,4 +96,3 @@ private:
   std::string escape(const std::string& s);
 };
 
-

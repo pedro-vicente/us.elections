@@ -235,16 +235,15 @@ std::string SpatialClient::st_geom_from_text(const std::string& wkt)
 
 std::string SpatialClient::st_makeline(const std::vector<Point2D>& points)
 {
-  if (points.size() < 2) return "";
-  std::ostringstream wkt;
-  wkt << "LINESTRING(";
+  std::ostringstream sql;
+  sql << "SELECT ST_AsText(ST_MakeLine(ARRAY[";
   for (size_t idx = 0; idx < points.size(); idx++)
   {
-    if (idx > 0) wkt << ", ";
-    wkt << points[idx].x << " " << points[idx].y;
+    if (idx > 0) sql << ", ";
+    sql << "ST_Point(" << points[idx].x << ", " << points[idx].y << ")";
   }
-  wkt << ")";
-  return st_geom_from_text(wkt.str());
+  sql << "]))";
+  return query_string(sql.str());
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -253,20 +252,15 @@ std::string SpatialClient::st_makeline(const std::vector<Point2D>& points)
 
 std::string SpatialClient::st_makepolygon(const std::vector<Point2D>& ring)
 {
-  if (ring.size() < 3) return "";
-  std::ostringstream wkt;
-  wkt << "POLYGON((";
+  std::ostringstream sql;
+  sql << "SELECT ST_AsText(ST_MakePolygon(ST_MakeLine(ARRAY[";
   for (size_t idx = 0; idx < ring.size(); idx++)
   {
-    if (idx > 0) wkt << ", ";
-    wkt << ring[idx].x << " " << ring[idx].y;
+    if (idx > 0) sql << ", ";
+    sql << "ST_Point(" << ring[idx].x << ", " << ring[idx].y << ")";
   }
-  if (ring[0].x != ring[ring.size() - 1].x || ring[0].y != ring[ring.size() - 1].y)
-  {
-    wkt << ", " << ring[0].x << " " << ring[0].y;
-  }
-  wkt << "))";
-  return st_geom_from_text(wkt.str());
+  sql << "])))";
+  return query_string(sql.str());
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -481,7 +475,8 @@ std::string SpatialClient::st_buffer(const std::string& geom, double distance)
 // st_convexhull
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::string SpatialClient::st_convexhull(const std::string& geom) {
+std::string SpatialClient::st_convexhull(const std::string& geom)
+{
   std::string sql = "SELECT ST_AsText(ST_ConvexHull(ST_GeomFromText('" + escape(geom) + "')))";
   return query_string(sql);
 }

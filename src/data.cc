@@ -57,10 +57,10 @@ database_t::database_t(const std::string& path) : db_path(path)
     "54", "West Virginia", "55", "Wisconsin", "56", "Wyoming", nullptr, nullptr
   };
 
-  for (int i = 0; state_data[i] != nullptr; i += 2)
+  for (int idx = 0; state_data[idx] != nullptr; idx += 2)
   {
     conn->Query("INSERT OR IGNORE INTO state_names VALUES ('" +
-      std::string(state_data[i]) + "', '" + std::string(state_data[i + 1]) + "');");
+      std::string(state_data[idx]) + "', '" + std::string(state_data[idx + 1]) + "');");
   }
 
   conn->Query(R"(
@@ -78,7 +78,7 @@ database_t::database_t(const std::string& path) : db_path(path)
     );
   )");
 
-  // Add county_name column if it doesn't exist (for existing databases)
+  // add county_name column if it doesn't exist (for existing databases)
   std::unique_ptr<duckdb::MaterializedQueryResult> check_result = conn->Query(
     "SELECT column_name FROM information_schema.columns WHERE table_name = 'results' AND column_name = 'county_name'");
   duckdb::unique_ptr<duckdb::DataChunk> check_chunk = check_result->Fetch();
@@ -157,7 +157,7 @@ int database_t::load_topojson(const std::string& json_path)
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////
-  // GeoJSON
+  // geojson
   /////////////////////////////////////////////////////////////////////////////////////////////////////
 
   else
@@ -230,32 +230,15 @@ int database_t::load_election_csv(const std::string& csv_path, int year)
   }
 
   std::unique_ptr<duckdb::MaterializedQueryResult> count_result = conn->Query("SELECT COUNT(*) FROM results WHERE year = " + std::to_string(year));
-  duckdb::unique_ptr<duckdb::DataChunk> chunk = count_result->Fetch();
-  if (chunk && chunk->size() > 0)
+  if (!count_result->HasError())
   {
-    int64_t count = chunk->GetValue(0, 0).GetValue<int64_t>();
-    std::cout << "Loaded " << count << " election records for " << year << std::endl;
-    
-    // Debug: print first 3 records to verify county_name
-    std::unique_ptr<duckdb::MaterializedQueryResult> debug_result = conn->Query(
-      "SELECT county_fips, county_name FROM results WHERE year = " + std::to_string(year) + " LIMIT 3");
-    if (!debug_result->HasError())
+    duckdb::unique_ptr<duckdb::DataChunk> chunk = count_result->Fetch();
+    if (chunk && chunk->size() > 0)
     {
-      duckdb::unique_ptr<duckdb::DataChunk> debug_chunk = debug_result->Fetch();
-      if (debug_chunk)
-      {
-        std::cout << "Sample records:" << std::endl;
-        for (size_t row = 0; row < debug_chunk->size(); row++)
-        {
-          duckdb::Value name_val = debug_chunk->GetValue(1, row);
-          std::cout << "  FIPS: " << debug_chunk->GetValue(0, row).ToString()
-                    << ", Name: [" << (name_val.IsNull() ? "NULL" : name_val.ToString()) << "]"
-                    << ", IsNull: " << (name_val.IsNull() ? "yes" : "no") << std::endl;
-        }
-      }
+      int64_t count = chunk->GetValue(0, 0).GetValue<int64_t>();
+      std::cout << "Loaded " << count << " results for " << year << std::endl;
+      return static_cast<int>(count);
     }
-    
-    return static_cast<int>(count);
   }
 
   return 0;
@@ -268,17 +251,22 @@ int database_t::load_election_csv(const std::string& csv_path, int year)
 std::vector<int> database_t::get_years()
 {
   std::vector<int> years;
+
   std::unique_ptr<duckdb::MaterializedQueryResult> result = conn->Query("SELECT DISTINCT year FROM results ORDER BY year DESC");
-  if (result->HasError()) return years;
+  if (result->HasError())
+  {
+    return years;
+  }
 
   duckdb::unique_ptr<duckdb::DataChunk> chunk;
   while ((chunk = result->Fetch()) != nullptr)
   {
-    for (size_t row = 0; row < chunk->size(); row++)
+    for (size_t idx = 0; idx < chunk->size(); idx++)
     {
-      years.push_back(chunk->GetValue(0, row).GetValue<int>());
+      years.push_back(chunk->GetValue(0, idx).GetValue<int>());
     }
   }
+
   return years;
 }
 
@@ -293,8 +281,8 @@ std::vector<county_record> database_t::get_counties(int year)
   std::string sql = R"(
     SELECT 
       c.fips,
-      COALESCE(NULLIF(r.county_name, ''), NULLIF(c.name, ''), '') as name,
-      COALESCE(NULLIF(s.name, ''), '') as state_name,
+      COALESCE(r.county_name, c.name) as name,
+      COALESCE(s.name, '') as state_name,
       c.state_fips,
       COALESCE(r.votes_gop, 0) as votes_gop,
       COALESCE(r.votes_dem, 0) as votes_dem,
@@ -306,7 +294,7 @@ std::vector<county_record> database_t::get_counties(int year)
     FROM counties c
     LEFT JOIN results r ON c.fips = r.county_fips AND r.year = )" + std::to_string(year) + R"(
     LEFT JOIN state_names s ON c.state_fips = s.fips
-    ORDER BY state_name, name
+    ORDER BY c.fips
   )";
 
   std::unique_ptr<duckdb::MaterializedQueryResult> result = conn->Query(sql);
@@ -319,12 +307,12 @@ std::vector<county_record> database_t::get_counties(int year)
   duckdb::unique_ptr<duckdb::DataChunk> chunk;
   while ((chunk = result->Fetch()) != nullptr)
   {
-    for (size_t row = 0; row < chunk->size(); row++)
+    for (size_t idx = 0; idx < chunk->size(); idx++)
     {
       county_record rec;
-      rec.fips = chunk->GetValue(0, row).ToString();
-      
-      duckdb::Value name_val = chunk->GetValue(1, row);
+      rec.fips = chunk->GetValue(0, idx).ToString();
+
+      duckdb::Value name_val = chunk->GetValue(1, idx);
       if (name_val.IsNull())
       {
         rec.name = "";
@@ -333,8 +321,8 @@ std::vector<county_record> database_t::get_counties(int year)
       {
         rec.name = name_val.ToString();
       }
-      
-      duckdb::Value state_val = chunk->GetValue(2, row);
+
+      duckdb::Value state_val = chunk->GetValue(2, idx);
       if (state_val.IsNull())
       {
         rec.state_name = "";
@@ -343,28 +331,27 @@ std::vector<county_record> database_t::get_counties(int year)
       {
         rec.state_name = state_val.ToString();
       }
-      
-      rec.state_fips = chunk->GetValue(3, row).ToString();
-      rec.votes_gop = chunk->GetValue(4, row).GetValue<int64_t>();
-      rec.votes_dem = chunk->GetValue(5, row).GetValue<int64_t>();
-      rec.votes_total = chunk->GetValue(6, row).GetValue<int64_t>();
-      rec.per_gop = chunk->GetValue(7, row).GetValue<double>();
-      rec.per_dem = chunk->GetValue(8, row).GetValue<double>();
-      rec.margin = chunk->GetValue(9, row).GetValue<double>();
-      rec.geojson = chunk->GetValue(10, row).ToString();
+
+      rec.state_fips = chunk->GetValue(3, idx).ToString();
+      rec.votes_gop = chunk->GetValue(4, idx).GetValue<int64_t>();
+      rec.votes_dem = chunk->GetValue(5, idx).GetValue<int64_t>();
+      rec.votes_total = chunk->GetValue(6, idx).GetValue<int64_t>();
+      rec.per_gop = chunk->GetValue(7, idx).GetValue<double>();
+      rec.per_dem = chunk->GetValue(8, idx).GetValue<double>();
+      rec.margin = chunk->GetValue(9, idx).GetValue<double>();
+      rec.geojson = chunk->GetValue(10, idx).ToString();
       records.push_back(rec);
     }
   }
 
-  // Debug: print first 3 county records
   if (records.size() > 0)
   {
     std::cout << "First 3 counties for year " << year << ":" << std::endl;
-    for (size_t i = 0; i < 3 && i < records.size(); i++)
+    for (size_t idx = 0; idx < 3 && idx < records.size(); idx++)
     {
-      std::cout << "  FIPS: " << records[i].fips 
-                << ", Name: [" << records[i].name << "]"
-                << ", State: [" << records[i].state_name << "]" << std::endl;
+      std::cout << "  FIPS: " << records[idx].fips
+        << ", Name: [" << records[idx].name << "]"
+        << ", State: [" << records[idx].state_name << "]" << std::endl;
     }
   }
 
@@ -403,14 +390,14 @@ std::vector<state_record> database_t::get_states(int year)
   duckdb::unique_ptr<duckdb::DataChunk> chunk;
   while ((chunk = result->Fetch()) != nullptr)
   {
-    for (size_t row = 0; row < chunk->size(); row++)
+    for (size_t idx = 0; idx < chunk->size(); idx++)
     {
       state_record rec;
-      rec.fips = chunk->GetValue(0, row).ToString();
-      rec.name = chunk->GetValue(1, row).ToString();
-      rec.votes_gop = chunk->GetValue(2, row).GetValue<int64_t>();
-      rec.votes_dem = chunk->GetValue(3, row).GetValue<int64_t>();
-      rec.votes_total = chunk->GetValue(4, row).GetValue<int64_t>();
+      rec.fips = chunk->GetValue(0, idx).ToString();
+      rec.name = chunk->GetValue(1, idx).ToString();
+      rec.votes_gop = chunk->GetValue(2, idx).GetValue<int64_t>();
+      rec.votes_dem = chunk->GetValue(3, idx).GetValue<int64_t>();
+      rec.votes_total = chunk->GetValue(4, idx).GetValue<int64_t>();
       rec.per_gop = (rec.votes_total > 0) ? static_cast<double>(rec.votes_gop) / rec.votes_total : 0.0;
       rec.per_dem = (rec.votes_total > 0) ? static_cast<double>(rec.votes_dem) / rec.votes_total : 0.0;
       rec.winner = (rec.votes_gop > rec.votes_dem) ? "GOP" : "DEM";
@@ -549,10 +536,10 @@ void database_t::print_counties_info()
 
   std::vector<int> years = get_years();
   std::cout << "Election years: ";
-  for (size_t i = 0; i < years.size(); i++)
+  for (size_t idx = 0; idx < years.size(); idx++)
   {
-    if (i > 0) std::cout << ", ";
-    std::cout << years[i];
+    if (idx > 0) std::cout << ", ";
+    std::cout << years[idx];
   }
   std::cout << std::endl;
 }

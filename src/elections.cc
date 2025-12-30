@@ -60,10 +60,14 @@ private:
   void update_table();
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+// ApplicationElections
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
 ApplicationElections::ApplicationElections(const Wt::WEnvironment& env)
   : Wt::WApplication(env), current_year(2024)
 {
-  setTitle("US Elections (DuckDB + Spatial)");
+  setTitle("US Elections");
 
   if (db)
   {
@@ -96,9 +100,9 @@ ApplicationElections::ApplicationElections(const Wt::WEnvironment& env)
   if (db)
   {
     std::vector<int> years = db->get_years();
-    for (size_t i = 0; i < years.size(); i++)
+    for (size_t idx = 0; idx < years.size(); idx++)
     {
-      year_combo->addItem(std::to_string(years[i]));
+      year_combo->addItem(std::to_string(years[idx]));
     }
   }
   else
@@ -136,7 +140,7 @@ ApplicationElections::ApplicationElections(const Wt::WEnvironment& env)
   std::unique_ptr<Wt::WContainerWidget> container_map = std::make_unique<Wt::WContainerWidget>();
   map = container_map->addWidget(std::make_unique<Wt::WMapLibre>());
   map->resize(Wt::WLength::Auto, Wt::WLength::Auto);
-  map->counties_ptr = &counties;
+  map->counties = &counties;
   map->current_year = current_year;
 
   layout->addWidget(std::move(container_map), 1);
@@ -156,7 +160,7 @@ void ApplicationElections::on_year_changed()
   states = db->get_states(current_year);
 
   map->current_year = current_year;
-  map->counties_ptr = &counties;
+  map->counties = &counties;
   map->refresh_data();
 
   update_stats();
@@ -181,10 +185,10 @@ void ApplicationElections::update_stats()
   }
 
   int64_t gop = 0, dem = 0;
-  for (size_t i = 0; i < states.size(); i++)
+  for (size_t idx = 0; idx < states.size(); idx++)
   {
-    gop += states[i].votes_gop;
-    dem += states[i].votes_dem;
+    gop += states[idx].votes_gop;
+    dem += states[idx].votes_dem;
   }
 
   std::stringstream ss;
@@ -210,21 +214,21 @@ void ApplicationElections::update_table()
   results_table->elementAt(0, 1)->addWidget(std::make_unique<Wt::WText>("Winner"));
   results_table->elementAt(0, 2)->addWidget(std::make_unique<Wt::WText>("Margin"));
 
-  for (size_t i = 0; i < states.size(); i++)
+  for (size_t idx = 0; idx < states.size(); idx++)
   {
-    const state_record& s = states[i];
-    int row = i + 1;
+    const state_record& s = states[idx];
+    int row_idx = idx + 1;
 
-    results_table->elementAt(row, 0)->addWidget(
+    results_table->elementAt(row_idx, 0)->addWidget(
       std::make_unique<Wt::WText>(s.name.substr(0, 12)));
 
     std::string color = (s.winner == "GOP") ? "#B82D35" : "#2A71AE";
-    results_table->elementAt(row, 1)->addWidget(
+    results_table->elementAt(row_idx, 1)->addWidget(
       std::make_unique<Wt::WText>("<span style='color:" + color + ";'>" + s.winner + "</span>"));
 
     std::stringstream ss;
     ss << std::fixed << std::setprecision(1) << std::abs(s.per_gop - s.per_dem) * 100 << "%";
-    results_table->elementAt(row, 2)->addWidget(std::make_unique<Wt::WText>(ss.str()));
+    results_table->elementAt(row_idx, 2)->addWidget(std::make_unique<Wt::WText>(ss.str()));
   }
 }
 
