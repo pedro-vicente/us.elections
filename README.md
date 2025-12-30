@@ -37,6 +37,8 @@ C++ wrapper for DuckDB spatial extension providing geometry operations:
 | **Operations** | `st_intersection`, `st_union`, `st_buffer`, `st_convexhull` |
 | **Export** | `st_asgeojson` |
 
+See [SPATIAL.md](SPATIAL.md) for detailed documentation including WKT format reference and usage examples.
+
 ## Build
 
 ```bash
